@@ -40,7 +40,12 @@ assesment/
 outputs/*/
 !outputs/20251116_213701/
 !outputs/20251116_213701/emotion_recognition_ft_20251116_213701.keras
+*.zip
 
 # Keep only the final model
 outputs/20251116_213701/*
 !outputs/20251116_213701/emotion_recognition_ft_20251116_213701.keras
+
+outputs/*.zip
+
+
