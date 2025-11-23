@@ -1,0 +1,12 @@
+backbone: mobilenet   # mobilenet_v2 | efficientnet_b0 | custom_cnn
+precision: mixed         # mixed | float32
+optimizer: adam          # adam | sgd | adamw
+lr: 1e-4
+aug_level: light        # none | light | strong
+freeze: head_only        # head_only | partial | full_unfreeze
+fine_tune_layers: 40
+picture_size: 48
+batch_size: 128
+epochs: 20
+no_of_classes: 7
+learning_rate: 0.0001

@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Training data and outputs (keep only final model)
+data/
+depricate/
+models/
+assesment/
+outputs/*/
+!outputs/20251116_213701/
+
+# Environment files
+.env
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Documentation
+README.MD
+*.md
+!requirements.txt
