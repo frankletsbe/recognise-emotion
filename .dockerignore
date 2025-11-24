@@ -38,6 +38,7 @@ Thumbs.db
 data/
 depricate/
 models/
+!models/final/
 assesment/
 outputs/*/
 !outputs/20251116_213701/
