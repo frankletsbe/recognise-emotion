@@ -5,16 +5,30 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 import cv2
 import numpy as np
 import tensorflow as tf
+import argparse
 from tensorflow import keras
 
 # Additional TensorFlow configuration to avoid half-precision issues
 tf.config.set_soft_device_placement(True)
 
 # Load the trained model
-MODEL_PATH = 'models/final/emotion_recognition_ft_20251116_115814.keras'
+# Parse command‑line arguments
+parser = argparse.ArgumentParser(description="Real‑time emotion recogniser with selectable model")
+parser.add_argument(
+    "--model",
+    default="final/emotion_recognition_ft_20251116_115814.keras",
+    help="Path (relative to the 'models' folder) of the TensorFlow/Keras model to load",
+)
+args = parser.parse_args()
+
+# Dynamically load the requested model
+model_path = pathlib.Path(__file__).parent / "models" / args.model
+if not model_path.exists():
+    print(f"Model file not found: {model_path}")
+    exit(1)
 try:
-    model = keras.models.load_model(MODEL_PATH)
-    print("Model loaded successfully!")
+    model = keras.models.load_model(str(model_path))
+    print(f"Model loaded successfully from {model_path}")
 except Exception as e:
     print(f"Error loading model: {e}")
     exit(1)
@@ -48,8 +62,8 @@ def preprocess_face(face_img):
         return None
 
 def main():
-    # Initialize Webcam - simple version
-    cap = cv2.VideoCapture(0)
+    # Initialize Webcam with DirectShow backend (fixes MSMF issues on Windows)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     
     if not cap.isOpened():
         print("Error: Could not open webcam.")
@@ -87,18 +101,25 @@ def main():
             processed_face = preprocess_face(face_roi)
 
             if processed_face is not None:
-                # Predict
-                predictions = model.predict(processed_face, verbose=0)
-                
-                # Get label
-                max_index = np.argmax(predictions[0])
-                emotion = EMOTION_LABELS[max_index]
-                confidence = predictions[0][max_index]
+                try:
+                    # Predict
+                    predictions = model.predict(processed_face, verbose=1)
+                    
+                    # Get label
+                    max_index = np.argmax(predictions[0])
+                    emotion = EMOTION_LABELS[max_index]
+                    confidence = predictions[0][max_index]
 
-                # Display label
-                label_text = f"{emotion} ({confidence*100:.1f}%)"
-                cv2.putText(frame, label_text, (x, y-10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                    # Display label
+                    label_text = f"{emotion} ({confidence*100:.1f}%)"
+                    cv2.putText(frame, label_text, (x, y-10), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                except Exception as e:
+                    # If prediction fails, display error on frame
+                    error_text = f"Prediction Error: {type(e).__name__}"
+                    cv2.putText(frame, error_text, (x, y-10), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                    print(f"Error during prediction: {e}")
 
         # Display the resulting frame
         cv2.imshow('Emotion Recognition - Real Time', frame)
