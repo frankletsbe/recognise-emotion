@@ -1,4 +1,5 @@
 import os
+import cv2
 import numpy as np
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
@@ -13,7 +14,7 @@ CORS(app)
 EMOTION_LABELS = ['Angry', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise']
 
 # Load the model at startup
-MODEL_PATH = 'outputs/20251116_213701/emotion_recognition_ft_20251116_213701.keras'
+MODEL_PATH = 'models/final/emotion_recognition_ft_20251116_115814.keras'
 print(f"Loading model from {MODEL_PATH}...")
 model = keras.models.load_model(MODEL_PATH)
 print(f"Model loaded successfully!")
@@ -75,9 +76,46 @@ def predict():
         if file.filename == '':
             return jsonify({'error': 'Empty filename'}), 400
         
-        # Preprocess the image
-        img_array = preprocess_image(file)
+        # Convert to numpy array for OpenCV
+        file_bytes = np.frombuffer(file.read(), np.uint8)
+        img_cv = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         
+        # Convert to grayscale for face detection
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+        
+        # Load Face Cascade
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        
+        # Detect faces
+        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+        
+        prediction_result = {}
+        
+        if len(faces) > 0:
+            # Process the largest face
+            # Find largest face based on area (w * h)
+            largest_face = max(faces, key=lambda rect: rect[2] * rect[3])
+            x, y, w, h = largest_face
+            
+            # Extract face ROI
+            face_roi = gray[y:y+h, x:x+w]
+            
+            # Preprocess for model
+            img_pil = Image.fromarray(face_roi)
+            img_pil = img_pil.resize((48, 48))
+            img_array = np.array(img_pil)
+            img_array = img_array / 255.0
+            img_array = np.expand_dims(img_array, axis=0)
+            img_array = np.expand_dims(img_array, axis=-1)
+            
+            prediction_result['box'] = [int(x), int(y), int(w), int(h)]
+        else:
+            # Fallback to full image if no face detected
+            # Reset file pointer to read with PIL
+            file.seek(0)
+            img_array = preprocess_image(file)
+            prediction_result['box'] = None
+
         # Make prediction
         predictions = model.predict(img_array, verbose=0)
         
@@ -103,7 +141,8 @@ def predict():
             'success': True,
             'prediction': top_emotion,
             'confidence': top_confidence,
-            'all_predictions': results
+            'all_predictions': results,
+            'box': prediction_result.get('box')
         })
     
     except Exception as e:
