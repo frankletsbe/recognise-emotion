@@ -3,9 +3,11 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies for TensorFlow
+# Install system dependencies for TensorFlow and OpenCV
 RUN apt-get update && apt-get install -y \
     libgomp1 \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -16,8 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY app.py .
+COPY recognise-expression.py .
 COPY static/ ./static/
-COPY outputs/20251116_213701/emotion_recognition_ft_20251116_213701.keras ./outputs/20251116_213701/
+COPY models/final/emotion_recognition_ft_20251116_115814.keras ./models/final/
 
 # Expose port
 EXPOSE 5000

@@ -25,8 +25,18 @@ const emotionLabel = document.getElementById('emotionLabel');
 const confidenceValue = document.getElementById('confidenceValue');
 const predictionsList = document.getElementById('predictionsList');
 
+// Webcam Elements
+const startWebcamBtn = document.getElementById('startWebcamBtn');
+const webcamSection = document.getElementById('webcamSection');
+const webcamVideo = document.getElementById('webcamVideo');
+const webcamCanvas = document.getElementById('webcamCanvas');
+const stopWebcamBtn = document.getElementById('stopWebcamBtn');
+
 // State
 let currentFile = null;
+let stream = null;
+let isProcessing = false;
+let animationFrameId = null;
 
 // Initialize
 function init() {
@@ -59,6 +69,10 @@ function setupEventListeners() {
     // Prevent default drag behavior on document
     document.addEventListener('dragover', (e) => e.preventDefault());
     document.addEventListener('drop', (e) => e.preventDefault());
+
+    // Webcam events
+    startWebcamBtn.addEventListener('click', startWebcam);
+    stopWebcamBtn.addEventListener('click', stopWebcam);
 }
 
 function handleDragOver(e) {
@@ -129,6 +143,148 @@ function clearImage() {
     hideResults();
     hideError();
     hideLoading();
+    hideLoading();
+}
+
+async function startWebcam(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        webcamVideo.srcObject = stream;
+        
+        dropZone.classList.add('hidden');
+        previewSection.classList.add('hidden');
+        webcamSection.classList.remove('hidden');
+        hideResults();
+        hideError();
+        
+        // Start real-time processing loop
+        processWebcamFrame();
+        
+    } catch (err) {
+        console.error("Error accessing webcam:", err);
+        showError("Could not access webcam. Please allow camera permissions.");
+    }
+}
+
+async function processWebcamFrame() {
+    if (!stream || webcamVideo.paused || webcamVideo.ended) return;
+
+    if (!isProcessing) {
+        isProcessing = true;
+        
+        // Capture frame
+        const canvas = document.createElement('canvas');
+        canvas.width = webcamVideo.videoWidth;
+        canvas.height = webcamVideo.videoHeight;
+        const ctx = canvas.getContext('2d');
+        
+        // Draw video to off-screen canvas (raw, unmirrored)
+        ctx.drawImage(webcamVideo, 0, 0, canvas.width, canvas.height);
+        
+        canvas.toBlob(async (blob) => {
+            if (blob) {
+                const formData = new FormData();
+                formData.append('file', new File([blob], "frame.jpg", { type: "image/jpeg" }));
+                
+                try {
+                    const response = await fetch('/predict', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        drawOverlay(data, canvas.width, canvas.height);
+                        displayResults(data); // Update sidebar results too
+                    }
+                } catch (err) {
+                    console.error("Frame processing error:", err);
+                } finally {
+                    isProcessing = false;
+                }
+            } else {
+                isProcessing = false;
+            }
+        }, 'image/jpeg', 0.8); // 0.8 quality for speed
+    }
+    
+    animationFrameId = requestAnimationFrame(processWebcamFrame);
+}
+
+function drawOverlay(data, width, height) {
+    webcamCanvas.width = width;
+    webcamCanvas.height = height;
+    webcamCanvas.classList.remove('hidden');
+    
+    const ctx = webcamCanvas.getContext('2d');
+    ctx.clearRect(0, 0, width, height);
+    
+    if (data.box) {
+        const [x, y, w, h] = data.box;
+        
+        // Calculate mirrored X coordinate for display
+        // The video is CSS mirrored (scaleX(-1))
+        // The canvas is NOT mirrored
+        // So we need to draw at (width - x - w) to match the visual video
+        const mirroredX = width - x - w;
+        
+        // Draw Green Box
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(mirroredX, y, w, h);
+        
+        // Draw Label Background
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
+        ctx.fillRect(mirroredX, y - 30, w, 30);
+        
+        // Draw Label Text
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 16px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${data.prediction} (${Math.round(data.confidence * 100)}%)`, mirroredX + w/2, y - 10);
+    }
+}
+
+function stopWebcam() {
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+    }
+    if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+    }
+    webcamVideo.srcObject = null;
+    webcamCanvas.classList.add('hidden');
+    
+    webcamSection.classList.add('hidden');
+    dropZone.classList.remove('hidden');
+}
+
+function captureImage() {
+    if (!stream) return;
+
+    // Set canvas dimensions to match video
+    webcamCanvas.width = webcamVideo.videoWidth;
+    webcamCanvas.height = webcamVideo.videoHeight;
+    
+    // Draw video frame to canvas
+    const ctx = webcamCanvas.getContext('2d');
+    ctx.drawImage(webcamVideo, 0, 0, webcamCanvas.width, webcamCanvas.height);
+    
+    // Convert to blob and upload
+    webcamCanvas.toBlob((blob) => {
+        if (blob) {
+            const file = new File([blob], "webcam-capture.jpg", { type: "image/jpeg" });
+            handleFile(file);
+            stopWebcam();
+        }
+    }, 'image/jpeg');
 }
 
 async function uploadAndPredict(file) {

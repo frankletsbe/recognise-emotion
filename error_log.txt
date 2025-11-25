@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\marty\anaconda3\envs\tf311_env\Lib\site-packages\tensorflow\__init__.py", line 45, in <module>
+    from tensorflow.python import tf2 as _tf2
+  File "C:\Users\marty\anaconda3\envs\tf311_env\Lib\site-packages\tensorflow\python\tf2.py", line 21, in <module>
+    from tensorflow.python.platform import _pywrap_tf2
+ImportError: DLL load failed while importing _pywrap_tf2: A dynamic link library (DLL) initialization routine failed.
+
+ERROR conda.cli.main_run:execute(127): `conda run python -c import tensorflow as tf` failed. (See above for error)

@@ -31,6 +31,22 @@
                         <h2 class="drop-zone-title">Drop your image here</h2>
                         <p class="drop-zone-text">or click to browse</p>
                         <input type="file" id="fileInput" accept="image/*" hidden>
+                        
+                        <div class="divider"><span>OR</span></div>
+                        <button id="startWebcamBtn" class="secondary-button">
+                            <span class="btn-icon">📸</span> Use Webcam
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Webcam Section -->
+                <div id="webcamSection" class="webcam-section hidden">
+                    <div class="video-container">
+                        <video id="webcamVideo" autoplay playsinline muted></video>
+                        <canvas id="webcamCanvas" class="hidden"></canvas>
+                    </div>
+                    <div class="webcam-controls">
+                        <button id="stopWebcamBtn" class="primary-button">Stop Webcam</button>
                     </div>
                 </div>
 
