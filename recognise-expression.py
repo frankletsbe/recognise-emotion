@@ -15,21 +15,15 @@ EMOTION_LABELS = ['Angry', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surpri
 
 def preprocess_face(face_img):
     """
-    Preprocess the face image for the ONNX model:
-    - Resize to 48x48
-    - Normalize to [0, 1]
-    - Reshape to (1, 48, 48, 1)
+    Prepare a face ROI for the ONNX model:
+    - Resize to 48×48
+    - Scale to [0, 1]
+    - Convert to float32 and reshape to (1, 48, 48, 1)
     """
     try:
-        # Resize to model input size
         face_resized = cv2.resize(face_img, (48, 48))
-        
-        # Normalize
-        face_normalized = face_resized / 255.0
-        
-        # Reshape: (1, 48, 48, 1) and convert to float32
-        face_reshaped = np.reshape(face_normalized, (1, 48, 48, 1)).astype(np.float32)
-        return face_reshaped
+        face_normalized = face_resized.astype(np.float32) / 255.0
+        return np.reshape(face_normalized, (1, 48, 48, 1))
     except Exception as e:
         print(f"Error in preprocessing: {e}")
         return None
@@ -48,68 +42,36 @@ def run_keras_backend(frame, face_cascade, ort_session):
 
     # Process each face
     for (x, y, w, h) in faces:
-        # Draw rectangle around face
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-
-        # Extract face ROI (Region of Interest)
-        face_roi = gray_frame[y:y+h, x:x+w]
-
-        # Preprocess
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        face_roi = gray_frame[y:y + h, x:x + w]
         processed_face = preprocess_face(face_roi)
-
         if processed_face is not None:
             try:
-                # ONNX Runtime inference
                 input_name = ort_session.get_inputs()[0].name
                 predictions = ort_session.run(None, {input_name: processed_face})[0]
-                
-                # Get label
                 max_index = np.argmax(predictions[0])
                 emotion = EMOTION_LABELS[max_index]
                 confidence = predictions[0][max_index]
-
-                # Display label
-                label_text = f"{emotion} ({confidence*100:.1f}%)"
-                cv2.putText(frame, label_text, (x, y-10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                label_text = f"{emotion} ({confidence * 100:.1f}%)"
+                cv2.putText(frame, label_text, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
             except Exception as e:
-                # If prediction fails, display error on frame
                 error_text = f"Err: {type(e).__name__}"
-                cv2.putText(frame, error_text, (x, y-10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                cv2.putText(frame, error_text, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
     return frame
 
 def run_deepface_backend(frame):
     try:
         from deepface import DeepFace
-        # DeepFace expects BGR (OpenCV default) or RGB. It handles conversion internally if needed.
-        # enforce_detection=False allows it to return no face if none found, preventing crash
-        # detector_backend='opencv' is faster for real-time
         results = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False, detector_backend='opencv', silent=True)
-        
-        # results is a list of dicts
         for result in results:
-            # DeepFace returns 'region' with x, y, w, h
             region = result['region']
             x, y, w, h = region['x'], region['y'], region['w'], region['h']
-            
-            # Draw rectangle
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            
-            # Get dominant emotion
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
             emotion = result['dominant_emotion']
-            # Confidence is not always directly available in the same way as Keras, 
-            # but 'emotion' key has probabilities.
             emotion_score = result['emotion'][emotion]
-            
-            # Display label
             label_text = f"{emotion} ({emotion_score:.1f}%)"
-            cv2.putText(frame, label_text, (x, y-10), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-            
-    except Exception as e:
-        # DeepFace might raise errors if no face found and enforce_detection=True, 
-        # but with False it should be safer. Still good to catch.
+            cv2.putText(frame, label_text, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+    except Exception:
         pass
     return frame
 
@@ -118,22 +80,26 @@ def main():
     parser.add_argument(
         "--model",
         default="emotion_model.onnx",
-        help="Path to the ONNX model file (only for keras backend)",
+        help="Path to the ONNX model file (only for keras backend)"
     )
     parser.add_argument(
         "--backend",
         choices=['keras', 'deepface'],
         default='keras',
-        help="Backend to use for emotion recognition: 'keras' (default) or 'deepface'",
+        help="Backend to use for emotion recognition: 'keras' (default) or 'deepface'"
+    )
+    parser.add_argument(
+        "--camera",
+        type=int,
+        default=0,
+        help="VideoCapture device index (0 = built‑in webcam, 1 = external camera, …)"
     )
     args = parser.parse_args()
 
-    # Setup for Keras backend
     ort_session = None
     face_cascade = None
-    
+
     if args.backend == 'keras':
-        # Dynamically load the requested model
         model_path = pathlib.Path(__file__).parent / args.model
         if not model_path.exists():
             print(f"Model file not found: {model_path}")
@@ -144,10 +110,7 @@ def main():
         except Exception as e:
             print(f"Error loading model: {e}")
             sys.exit(1)
-            
-        # Load Face Cascade Classifier
         face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-
     elif args.backend == 'deepface':
         try:
             from deepface import DeepFace
@@ -158,9 +121,7 @@ def main():
             print("Error: DeepFace is not installed. Please install it with 'pip install deepface'")
             sys.exit(1)
 
-    # Initialize Webcam
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-    
+    cap = cv2.VideoCapture(args.camera, cv2.CAP_DSHOW)
     if not cap.isOpened():
         print("Error: Could not open webcam.")
         return
@@ -168,25 +129,17 @@ def main():
     print(f"Starting webcam with {args.backend} backend... Press 'q' to quit.")
 
     while True:
-        # Read frame
         ret, frame = cap.read()
         if not ret:
             print("Error: Failed to capture frame.")
             break
-
         if args.backend == 'keras':
             frame = run_keras_backend(frame, face_cascade, ort_session)
         else:
             frame = run_deepface_backend(frame)
-
-        # Display the resulting frame
         cv2.imshow('Emotion Recognition - Real Time', frame)
-
-        # Quit on 'q'
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-
-    # Release resources
     cap.release()
     cv2.destroyAllWindows()
 
