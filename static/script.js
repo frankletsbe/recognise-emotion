@@ -376,52 +376,51 @@ function drawOverlay(data, width, height) {
         console.log('Box found, drawing...'); // Debug log
         const [x, y, w, h] = data.box;
         
-        // Calculate mirrored X coordinate for display
-        const mirroredX = width - x - w;
-        
         // Draw Cyan Box with rounded corners
         const radius = 15;
         ctx.strokeStyle = '#00FFFF';  // Cyan color
         ctx.lineWidth = 4;  // Thicker line for better visibility
         
-        // Draw rounded rectangle
+        // Draw rounded rectangle at ORIGINAL coordinates
         ctx.beginPath();
-        ctx.moveTo(mirroredX + radius, y);
-        ctx.lineTo(mirroredX + w - radius, y);
-        ctx.quadraticCurveTo(mirroredX + w, y, mirroredX + w, y + radius);
-        ctx.lineTo(mirroredX + w, y + h - radius);
-        ctx.quadraticCurveTo(mirroredX + w, y + h, mirroredX + w - radius, y + h);
-        ctx.lineTo(mirroredX + radius, y + h);
-        ctx.quadraticCurveTo(mirroredX, y + h, mirroredX, y + h - radius);
-        ctx.lineTo(mirroredX, y + radius);
-        ctx.quadraticCurveTo(mirroredX, y, mirroredX + radius, y);
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + w - radius, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+        ctx.lineTo(x + w, y + h - radius);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+        ctx.lineTo(x + radius, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
         ctx.closePath();
         ctx.stroke();
         
-        // Prepare label text with better formatting
+        // Prepare label text
         const labelText = `${data.prediction} ${Math.round(data.confidence * 100)}%`;
-        ctx.font = 'bold 18px Inter, sans-serif';  // Larger, bolder font
+        ctx.font = 'bold 18px Inter, sans-serif';
         const textMetrics = ctx.measureText(labelText);
         const textWidth = textMetrics.width;
         const textHeight = 24;
         const padding = 12;
         
-        // Position label at the same mirroredX as the box
-        const labelX = mirroredX;
+        // Draw label at ORIGINAL x coordinate
         const labelY = y - textHeight - padding;
         
         // Draw Label Background
         ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
-        ctx.fillRect(labelX, labelY, textWidth + padding * 2, textHeight + padding);
+        ctx.fillRect(x, labelY, textWidth + padding * 2, textHeight + padding);
         
-        // Draw mirrored text
+        // Pre-mirror the text so it appears correct after CSS mirroring
         ctx.save();
+        ctx.translate(x + textWidth + padding * 2, labelY);
         ctx.scale(-1, 1);
+        
         ctx.fillStyle = '#FFFFFF';
         ctx.font = 'bold 18px Inter, sans-serif';
-        ctx.textAlign = 'right';
+        ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
-        ctx.fillText(labelText, -labelX - padding, labelY + 4);
+        ctx.fillText(labelText, padding, 4);
+        
         ctx.restore();
     }
 }
