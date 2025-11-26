@@ -464,6 +464,41 @@ async function uploadAndPredict(file) {
     }
 }
 
+// Add this new function to draw box on the preview image
+function drawBoxOnPreview(box, emotion, confidence) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = imagePreview;
+    
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    
+    // Draw the image
+    ctx.drawImage(img, 0, 0);
+    
+    // Draw bounding box
+    const [x, y, w, h] = box;
+    ctx.strokeStyle = '#00FFFF';  // Cyan
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+    
+    // Draw label
+    const label = `${emotion} ${Math.round(confidence * 100)}%`;
+    ctx.font = 'bold 16px Inter, sans-serif';
+    const textWidth = ctx.measureText(label).width;
+    
+    // Draw label background
+    ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+    ctx.fillRect(x, y - 25, textWidth + 20, 30);
+    
+    // Draw label text
+    ctx.fillStyle = '#00FFFF';
+    ctx.fillText(label, x + 10, y - 7);
+    
+    // Replace preview image with canvas
+    imagePreview.src = canvas.toDataURL();
+}
+
 function displayResults(data) {
     // Update top prediction
     const topEmotion = data.prediction;
@@ -481,51 +516,79 @@ function displayResults(data) {
         predictionsList.appendChild(item);
     });
     
+    // Draw bounding box on uploaded image if box data exists
+    if (data.box && currentFile) {
+        drawBoxOnPreview(data.box, data.prediction, data.confidence);
+    }
+    
     showResults();
 }
 
-function createPredictionItem(prediction, index) {
-    const item = document.createElement('div');
-    item.className = 'prediction-item';
-    item.style.animationDelay = `${index * 0.05}s`;
+async function predictEmotion() {
+    const fileInput = document.getElementById('imageInput');
+    const file = fileInput.files[0];
     
-    const emoji = document.createElement('div');
-    emoji.className = 'prediction-emoji';
-    emoji.textContent = EMOTION_EMOJIS[prediction.emotion] || '😊';
+    if (!file) {
+        alert('Please select an image first');
+        return;
+    }
     
-    const info = document.createElement('div');
-    info.className = 'prediction-info';
+    const formData = new FormData();
+    formData.append('file', file);
     
-    const name = document.createElement('div');
-    name.className = 'prediction-name';
-    name.textContent = prediction.emotion;
+    try {
+        const response = await fetch('/predict', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Display the image with bounding box
+            displayImageWithBox(file, data.box, data.prediction, data.confidence);
+        } else {
+            alert('Error: ' + (data.error || 'No face detected'));
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to predict emotion');
+    }
+}
+
+function displayImageWithBox(file, box, emotion, confidence) {
+    const canvas = document.getElementById('resultCanvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
     
-    const barContainer = document.createElement('div');
-    barContainer.className = 'prediction-bar-container';
+    img.onload = function() {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        
+        // Draw the image
+        ctx.drawImage(img, 0, 0);
+        
+        // Draw bounding box (cyan color to match backend)
+        const [x, y, w, h] = box;
+        ctx.strokeStyle = '#00FFFF';  // Cyan
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, w, h);
+        
+        // Draw label
+        const label = `${emotion} (${(confidence * 100).toFixed(1)}%)`;
+        ctx.font = 'bold 16px Arial';
+        const textWidth = ctx.measureText(label).width;
+        
+        // Draw label background
+        ctx.fillStyle = '#00FFFF';
+        ctx.fillRect(x, y - 25, textWidth + 10, 25);
+        
+        // Draw label text
+        ctx.fillStyle = '#000000';
+        ctx.fillText(label, x + 5, y - 7);
+    };
     
-    const bar = document.createElement('div');
-    bar.className = 'prediction-bar';
-    const percentage = prediction.confidence * 100;
-    
-    // Animate bar width
-    setTimeout(() => {
-        bar.style.width = `${percentage}%`;
-    }, 100 + index * 50);
-    
-    barContainer.appendChild(bar);
-    
-    info.appendChild(name);
-    info.appendChild(barContainer);
-    
-    const percentageText = document.createElement('div');
-    percentageText.className = 'prediction-percentage';
-    percentageText.textContent = `${Math.round(percentage)}%`;
-    
-    item.appendChild(emoji);
-    item.appendChild(info);
-    item.appendChild(percentageText);
-    
-    return item;
+    img.src = URL.createObjectURL(file);
 }
 
 function showLoading() {
