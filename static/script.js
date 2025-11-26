@@ -270,11 +270,16 @@ async function startWebcam(e) {
         stream = await navigator.mediaDevices.getUserMedia({ video: true });
         webcamVideo.srcObject = stream;
         
+        // CRITICAL FIX: Wait for video to actually start playing
+        await webcamVideo.play();
+        
         dropZone.classList.add('hidden');
         previewSection.classList.add('hidden');
         webcamSection.classList.remove('hidden');
         hideResults();
         hideError();
+        
+        console.log('Webcam started, video playing:', !webcamVideo.paused); // Debug
         
         // Start real-time processing loop
         processWebcamFrame();
@@ -286,7 +291,21 @@ async function startWebcam(e) {
 }
 
 async function processWebcamFrame() {
-    if (!stream || webcamVideo.paused || webcamVideo.ended) return;
+    console.log('processWebcamFrame called, stream:', !!stream); // Debug
+    
+    if (!stream || webcamVideo.paused || webcamVideo.ended) {
+        console.log('Stream check failed'); // Debug
+        return;
+    }
+    
+    // Check if video is ready
+    if (webcamVideo.readyState !== webcamVideo.HAVE_ENOUGH_DATA) {
+        console.log('Video not ready yet'); // Debug
+        animationFrameId = requestAnimationFrame(processWebcamFrame);
+        return;
+    }
+
+    console.log('About to process frame, isProcessing:', isProcessing); // Debug
 
     if (!isProcessing) {
         isProcessing = true;
@@ -297,11 +316,14 @@ async function processWebcamFrame() {
         canvas.height = webcamVideo.videoHeight;
         const ctx = canvas.getContext('2d');
         
+        console.log('Canvas size:', canvas.width, 'x', canvas.height); // Debug
+        
         // Draw video to off-screen canvas (raw, unmirrored)
         ctx.drawImage(webcamVideo, 0, 0, canvas.width, canvas.height);
         
         canvas.toBlob(async (blob) => {
             if (blob) {
+                console.log('Blob created, sending to server...'); // Debug
                 const formData = new FormData();
                 formData.append('file', new File([blob], "frame.jpg", { type: "image/jpeg" }));
                 
@@ -310,6 +332,8 @@ async function processWebcamFrame() {
                         method: 'POST',
                         body: formData
                     });
+                    
+                    console.log('Response status:', response.status); // Debug
                     
                     if (response.ok) {
                         const data = await response.json();
@@ -330,9 +354,10 @@ async function processWebcamFrame() {
                     isProcessing = false;
                 }
             } else {
+                console.log('Blob creation failed'); // Debug
                 isProcessing = false;
             }
-        }, 'image/jpeg', 0.8); // 0.8 quality for speed
+        }, 'image/jpeg', 0.8);
     }
     
     animationFrameId = requestAnimationFrame(processWebcamFrame);
@@ -352,15 +377,12 @@ function drawOverlay(data, width, height) {
         const [x, y, w, h] = data.box;
         
         // Calculate mirrored X coordinate for display
-        // The video is CSS mirrored (scaleX(-1))
-        // The canvas is NOT mirrored
-        // So we need to draw at (width - x - w) to match the visual video
         const mirroredX = width - x - w;
         
         // Draw Cyan Box with rounded corners
         const radius = 15;
         ctx.strokeStyle = '#00FFFF';  // Cyan color
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 4;  // Thicker line for better visibility
         
         // Draw rounded rectangle
         ctx.beginPath();
@@ -376,20 +398,31 @@ function drawOverlay(data, width, height) {
         ctx.closePath();
         ctx.stroke();
         
-        // Draw Label Background (semi-transparent)
+        // Prepare label text with better formatting
         const labelText = `${data.prediction} ${Math.round(data.confidence * 100)}%`;
-        ctx.font = 'bold 16px Inter, sans-serif';
+        ctx.font = 'bold 18px Inter, sans-serif';  // Larger, bolder font
         const textMetrics = ctx.measureText(labelText);
         const textWidth = textMetrics.width;
-        const textHeight = 20;
+        const textHeight = 24;
+        const padding = 12;
         
-        ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
-        ctx.fillRect(mirroredX, y - textHeight - 10, textWidth + 20, textHeight + 10);
+        // Position label at the same mirroredX as the box
+        const labelX = mirroredX;
+        const labelY = y - textHeight - padding;
         
-        // Draw Label Text
-        ctx.fillStyle = '#00FFFF';
-        ctx.textAlign = 'left';
-        ctx.fillText(labelText, mirroredX + 10, y - 8);
+        // Draw Label Background
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
+        ctx.fillRect(labelX, labelY, textWidth + padding * 2, textHeight + padding);
+        
+        // Draw mirrored text
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 18px Inter, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'top';
+        ctx.fillText(labelText, -labelX - padding, labelY + 4);
+        ctx.restore();
     }
 }
 
