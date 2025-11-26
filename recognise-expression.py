@@ -1,5 +1,7 @@
 import os
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+# Enable legacy Keras API for DeepFace compatibility
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
 
 import cv2
 import numpy as np
@@ -7,6 +9,7 @@ import argparse
 import pathlib
 import sys
 import onnxruntime as ort
+import tf_keras as keras
 
 DEEPFACE_AVAILABLE = False
 
