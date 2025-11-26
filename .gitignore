@@ -50,4 +50,4 @@ outputs/20251116_213701/*
 
 outputs/*.zip
 
-
+*.code-workspace

@@ -32,15 +32,23 @@ const webcamVideo = document.getElementById('webcamVideo');
 const webcamCanvas = document.getElementById('webcamCanvas');
 const stopWebcamBtn = document.getElementById('stopWebcamBtn');
 
+// Settings Elements
+const cameraSelect = document.getElementById('cameraSelect');
+const modelSelect = document.getElementById('modelSelect');
+
 // State
 let currentFile = null;
 let stream = null;
 let isProcessing = false;
 let animationFrameId = null;
+let availableCameras = [];
+let availableModels = [];
 
 // Initialize
 function init() {
     setupEventListeners();
+    loadCameras();
+    loadModels();
 }
 
 function setupEventListeners() {
@@ -73,6 +81,10 @@ function setupEventListeners() {
     // Webcam events
     startWebcamBtn.addEventListener('click', startWebcam);
     stopWebcamBtn.addEventListener('click', stopWebcam);
+    
+    // Settings events
+    cameraSelect.addEventListener('change', handleCameraChange);
+    modelSelect.addEventListener('change', handleModelChange);
 }
 
 function handleDragOver(e) {
@@ -146,6 +158,108 @@ function clearImage() {
     hideLoading();
 }
 
+async function loadCameras() {
+    try {
+        const response = await fetch('/api/cameras');
+        const data = await response.json();
+        
+        availableCameras = data.cameras;
+        cameraSelect.innerHTML = '';
+        
+        data.cameras.forEach(camera => {
+            const option = document.createElement('option');
+            option.value = camera.index;
+            option.textContent = `${camera.name}${camera.working ? ' ✓' : ' (not working)'}`;
+            if (camera.index === data.recommended) {
+                option.selected = true;
+            }
+            if (!camera.working) {
+                option.style.color = '#888';
+            }
+            cameraSelect.appendChild(option);
+        });
+    } catch (err) {
+        console.error('Failed to load cameras:', err);
+        cameraSelect.innerHTML = '<option>Error loading cameras</option>';
+    }
+}
+
+async function loadModels() {
+    try {
+        const response = await fetch('/api/models');
+        const data = await response.json();
+        
+        availableModels = data.models;
+        modelSelect.innerHTML = '';
+        
+        data.models.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.id;
+            option.textContent = model.name + (model.available ? '' : ' (unavailable)');
+            if (model.id === data.current) {
+                option.selected = true;
+            }
+            if (!model.available) {
+                option.disabled = true;
+                option.style.color = '#888';
+            }
+            modelSelect.appendChild(option);
+        });
+    } catch (err) {
+        console.error('Failed to load models:', err);
+        modelSelect.innerHTML = '<option>Error loading models</option>';
+    }
+}
+
+async function handleCameraChange() {
+    const cameraIndex = parseInt(cameraSelect.value);
+    
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ camera_index: cameraIndex })
+        });
+        
+        if (response.ok) {
+            console.log('Camera updated to index:', cameraIndex);
+            // If webcam is running, restart it with new camera
+            if (stream) {
+                stopWebcam();
+                setTimeout(() => startWebcam(), 500);
+            }
+        }
+    } catch (err) {
+        console.error('Failed to update camera:', err);
+    }
+}
+
+async function handleModelChange() {
+    const modelType = modelSelect.value;
+    
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ model_type: modelType })
+        });
+        
+        if (response.ok) {
+            console.log('Model updated to:', modelType);
+        } else {
+            const data = await response.json();
+            showError(data.error || 'Failed to update model');
+        }
+    } catch (err) {
+        console.error('Failed to update model:', err);
+        showError('Failed to update model');
+    }
+}
+
 async function startWebcam(e) {
     if (e) {
         e.preventDefault();
@@ -199,8 +313,16 @@ async function processWebcamFrame() {
                     
                     if (response.ok) {
                         const data = await response.json();
-                        drawOverlay(data, canvas.width, canvas.height);
-                        displayResults(data); // Update sidebar results too
+                        console.log('Prediction response:', data); // Debug log
+                        if (data.success && data.box) {
+                            console.log('Drawing box at:', data.box); // Debug log
+                            drawOverlay(data, canvas.width, canvas.height);
+                            displayResults(data); // Update sidebar results too
+                        } else {
+                            console.log('No box in response or not successful'); // Debug log
+                        }
+                    } else {
+                        console.error('Response not OK:', response.status);
                     }
                 } catch (err) {
                     console.error("Frame processing error:", err);
@@ -217,6 +339,7 @@ async function processWebcamFrame() {
 }
 
 function drawOverlay(data, width, height) {
+    console.log('drawOverlay called with:', { data, width, height }); // Debug log
     webcamCanvas.width = width;
     webcamCanvas.height = height;
     webcamCanvas.classList.remove('hidden');
@@ -225,6 +348,7 @@ function drawOverlay(data, width, height) {
     ctx.clearRect(0, 0, width, height);
     
     if (data.box) {
+        console.log('Box found, drawing...'); // Debug log
         const [x, y, w, h] = data.box;
         
         // Calculate mirrored X coordinate for display
@@ -233,20 +357,39 @@ function drawOverlay(data, width, height) {
         // So we need to draw at (width - x - w) to match the visual video
         const mirroredX = width - x - w;
         
-        // Draw Green Box
-        ctx.strokeStyle = '#00ff00';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(mirroredX, y, w, h);
+        // Draw Cyan Box with rounded corners
+        const radius = 15;
+        ctx.strokeStyle = '#00FFFF';  // Cyan color
+        ctx.lineWidth = 3;
         
-        // Draw Label Background
-        ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
-        ctx.fillRect(mirroredX, y - 30, w, 30);
+        // Draw rounded rectangle
+        ctx.beginPath();
+        ctx.moveTo(mirroredX + radius, y);
+        ctx.lineTo(mirroredX + w - radius, y);
+        ctx.quadraticCurveTo(mirroredX + w, y, mirroredX + w, y + radius);
+        ctx.lineTo(mirroredX + w, y + h - radius);
+        ctx.quadraticCurveTo(mirroredX + w, y + h, mirroredX + w - radius, y + h);
+        ctx.lineTo(mirroredX + radius, y + h);
+        ctx.quadraticCurveTo(mirroredX, y + h, mirroredX, y + h - radius);
+        ctx.lineTo(mirroredX, y + radius);
+        ctx.quadraticCurveTo(mirroredX, y, mirroredX + radius, y);
+        ctx.closePath();
+        ctx.stroke();
+        
+        // Draw Label Background (semi-transparent)
+        const labelText = `${data.prediction} ${Math.round(data.confidence * 100)}%`;
+        ctx.font = 'bold 16px Inter, sans-serif';
+        const textMetrics = ctx.measureText(labelText);
+        const textWidth = textMetrics.width;
+        const textHeight = 20;
+        
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+        ctx.fillRect(mirroredX, y - textHeight - 10, textWidth + 20, textHeight + 10);
         
         // Draw Label Text
-        ctx.fillStyle = '#000000';
-        ctx.font = 'bold 16px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${data.prediction} (${Math.round(data.confidence * 100)}%)`, mirroredX + w/2, y - 10);
+        ctx.fillStyle = '#00FFFF';
+        ctx.textAlign = 'left';
+        ctx.fillText(labelText, mirroredX + 10, y - 8);
     }
 }
 
