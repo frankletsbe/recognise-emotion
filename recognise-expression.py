@@ -1,36 +1,21 @@
 import os
-# Disable oneDNN optimizations that cause LLVM errors
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-# Force usage of legacy Keras (tf_keras) to support models saved with older Keras versions
-# and to resolve 'batch_shape' errors with Keras 3.
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
 
 import cv2
 import numpy as np
 import argparse
 import pathlib
 import sys
-
-# TensorFlow/Keras imports
-import tensorflow as tf
-# Force usage of tensorflow.keras (legacy Keras 2.x API)
-from tensorflow import keras
-from tensorflow.keras.models import load_model   
-print("Using tensorflow.keras for model loading.")
-
+import onnxruntime as ort
 
 DEEPFACE_AVAILABLE = False
-
-
-# Additional TensorFlow configuration to avoid half-precision issues
-tf.config.set_soft_device_placement(True)
 
 # Emotion labels (must match training for Keras model)
 EMOTION_LABELS = ['Angry', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise']
 
 def preprocess_face(face_img):
     """
-    Preprocess the face image for the Keras model:
+    Preprocess the face image for the ONNX model:
     - Resize to 48x48
     - Normalize to [0, 1]
     - Reshape to (1, 48, 48, 1)
@@ -42,14 +27,14 @@ def preprocess_face(face_img):
         # Normalize
         face_normalized = face_resized / 255.0
         
-        # Reshape: (1, 48, 48, 1)
-        face_reshaped = np.reshape(face_normalized, (1, 48, 48, 1))
+        # Reshape: (1, 48, 48, 1) and convert to float32
+        face_reshaped = np.reshape(face_normalized, (1, 48, 48, 1)).astype(np.float32)
         return face_reshaped
     except Exception as e:
         print(f"Error in preprocessing: {e}")
         return None
 
-def run_keras_backend(frame, face_cascade, model):
+def run_keras_backend(frame, face_cascade, ort_session):
     # Convert to grayscale for face detection
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -74,8 +59,9 @@ def run_keras_backend(frame, face_cascade, model):
 
         if processed_face is not None:
             try:
-                # Predict
-                predictions = model.predict(processed_face, verbose=0)
+                # ONNX Runtime inference
+                input_name = ort_session.get_inputs()[0].name
+                predictions = ort_session.run(None, {input_name: processed_face})[0]
                 
                 # Get label
                 max_index = np.argmax(predictions[0])
@@ -91,11 +77,11 @@ def run_keras_backend(frame, face_cascade, model):
                 error_text = f"Err: {type(e).__name__}"
                 cv2.putText(frame, error_text, (x, y-10), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-                # print(f"Error during prediction: {e}")
     return frame
 
 def run_deepface_backend(frame):
     try:
+        from deepface import DeepFace
         # DeepFace expects BGR (OpenCV default) or RGB. It handles conversion internally if needed.
         # enforce_detection=False allows it to return no face if none found, preventing crash
         # detector_backend='opencv' is faster for real-time
@@ -131,8 +117,8 @@ def main():
     parser = argparse.ArgumentParser(description="Real‑time emotion recogniser")
     parser.add_argument(
         "--model",
-        default="final/emotion_recognition_ft_20251116_115814.keras",
-        help="Path (relative to the 'models' folder) of the TensorFlow/Keras model to load (only for keras backend)",
+        default="emotion_model.onnx",
+        help="Path to the ONNX model file (only for keras backend)",
     )
     parser.add_argument(
         "--backend",
@@ -143,18 +129,18 @@ def main():
     args = parser.parse_args()
 
     # Setup for Keras backend
-    model = None
+    ort_session = None
     face_cascade = None
     
     if args.backend == 'keras':
         # Dynamically load the requested model
-        model_path = pathlib.Path(__file__).parent / "models" / args.model
+        model_path = pathlib.Path(__file__).parent / args.model
         if not model_path.exists():
             print(f"Model file not found: {model_path}")
             sys.exit(1)
         try:
-            model = load_model(str(model_path))
-            print(f"Model loaded successfully from {model_path}")
+            ort_session = ort.InferenceSession(str(model_path))
+            print(f"ONNX model loaded successfully from {model_path}")
         except Exception as e:
             print(f"Error loading model: {e}")
             sys.exit(1)
@@ -189,7 +175,7 @@ def main():
             break
 
         if args.backend == 'keras':
-            frame = run_keras_backend(frame, face_cascade, model)
+            frame = run_keras_backend(frame, face_cascade, ort_session)
         else:
             frame = run_deepface_backend(frame)
 
