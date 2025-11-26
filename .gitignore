@@ -38,7 +38,7 @@ depricate/
 models/
 !models/final/
 !models/final/emotion_recognition_ft_20251116_115814.keras
-assesment/
+assessment/
 outputs/*/
 !outputs/20251116_213701/
 !outputs/20251116_213701/emotion_recognition_ft_20251116_213701.keras
@@ -51,3 +51,4 @@ outputs/20251116_213701/*
 outputs/*.zip
 
 *.code-workspace
+*.mp4
