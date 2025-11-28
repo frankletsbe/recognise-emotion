@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Frontend Tests</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        padding: 20px;
+      }
+      .pass {
+        color: green;
+      }
+      .fail {
+        color: red;
+      }
+      .test-case {
+        margin-bottom: 10px;
+      }
+
+      /* Mock styles for script.js */
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Frontend Tests</h1>
+    <div id="testResults"></div>
+
+    <!-- Mock DOM Elements required by script.js -->
+    <div style="display: none">
+      <div id="dropZone"></div>
+      <input id="fileInput" type="file" />
+      <div id="previewSection"></div>
+      <img id="imagePreview" />
+      <button id="clearButton"></button>
+      <div id="resultsSection"></div>
+      <div id="loadingState"></div>
+      <div id="errorState"></div>
+      <div id="errorMessage"></div>
+      <button id="retryButton"></button>
+      <div id="emotionIcon"></div>
+      <div id="emotionLabel"></div>
+      <div id="confidenceValue"></div>
+      <div id="predictionsList"></div>
+
+      <button id="startWebcamBtn"></button>
+      <div id="webcamSection"></div>
+      <video id="webcamVideo"></video>
+      <canvas id="webcamCanvas"></canvas>
+      <button id="stopWebcamBtn"></button>
+
+      <select id="cameraSelect"></select>
+      <select id="modelSelect"></select>
+
+      <!-- Extra element used in predictEmotion which seems unused but present in script -->
+      <input id="imageInput" type="file" />
+      <canvas id="resultCanvas"></canvas>
+    </div>
+
+    <!-- Load the script to test -->
+    <script src="../static/script.js"></script>
+
+    <!-- Test Suite -->
+    <script>
+      const resultsDiv = document.getElementById("testResults");
+      let passed = 0;
+      let failed = 0;
+
+      function assert(condition, message) {
+        const div = document.createElement("div");
+        div.className = "test-case";
+        if (condition) {
+          div.innerHTML = `<span class="pass">✓ PASS</span>: ${message}`;
+          passed++;
+        } else {
+          div.innerHTML = `<span class="fail">✗ FAIL</span>: ${message}`;
+          failed++;
+          console.error("Assertion failed:", message);
+        }
+        resultsDiv.appendChild(div);
+      }
+
+      function runTests() {
+        console.log("Running tests...");
+
+        // Test 1: Check if createPredictionItem exists
+        assert(
+          typeof createPredictionItem === "function",
+          "createPredictionItem function should be defined"
+        );
+
+        // Test 2: Check createPredictionItem output structure
+        if (typeof createPredictionItem === "function") {
+          const prediction = { emotion: "Happy", confidence: 0.95 };
+          const index = 0;
+          const item = createPredictionItem(prediction, index);
+
+          assert(item instanceof HTMLElement, "Should return an HTML Element");
+          assert(
+            item.classList.contains("prediction-item"),
+            'Should have class "prediction-item"'
+          );
+
+          const name = item.querySelector(".prediction-name");
+          assert(
+            name && name.textContent === "Happy",
+            "Should display emotion name"
+          );
+
+          const progressBar = item.querySelector(".progress-bar");
+          assert(progressBar, "Should have a progress bar");
+          assert(
+            progressBar.style.width === "95%",
+            "Progress bar width should match confidence"
+          );
+
+          // Check color for top prediction (index 0)
+          // Note: computed style might differ, checking inline style
+          // rgb(0, 255, 255) is #00FFFF
+          assert(
+            progressBar.style.backgroundColor === "rgb(0, 255, 255)" ||
+              progressBar.style.backgroundColor === "#00ffff",
+            "Top prediction should be cyan"
+          );
+        }
+
+        // Test 3: Check createPredictionItem for non-top prediction
+        if (typeof createPredictionItem === "function") {
+          const prediction = { emotion: "Sad", confidence: 0.05 };
+          const index = 1;
+          const item = createPredictionItem(prediction, index);
+
+          const progressBar = item.querySelector(".progress-bar");
+          // rgba(0, 255, 255, 0.3)
+          assert(
+            progressBar.style.backgroundColor === "rgba(0, 255, 255, 0.3)",
+            "Other predictions should be transparent cyan"
+          );
+        }
+
+        // Summary
+        const summary = document.createElement("div");
+        summary.innerHTML = `<br><strong>Total: ${
+          passed + failed
+        }, Passed: ${passed}, Failed: ${failed}</strong>`;
+        resultsDiv.appendChild(summary);
+      }
+
+      // Run tests after a short delay to ensure script.js is loaded
+      setTimeout(runTests, 100);
+    </script>
+  </body>
+</html>

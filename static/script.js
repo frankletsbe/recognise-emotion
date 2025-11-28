@@ -477,7 +477,20 @@ async function uploadAndPredict(file) {
         });
         
         if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
+            let errorMessage = `Server error: ${response.status}`;
+            try {
+                const errorData = await response.json();
+                if (errorData.error) {
+                    if (errorData.error.includes('No face detected')) {
+                        errorMessage = "Could not predict emotion, try again using a different image";
+                    } else {
+                        errorMessage = errorData.error;
+                    }
+                }
+            } catch (e) {
+                // Ignore JSON parse error, use default status message
+            }
+            throw new Error(errorMessage);
         }
         
         const data = await response.json();
@@ -529,6 +542,46 @@ function drawBoxOnPreview(box, emotion, confidence) {
     
     // Replace preview image with canvas
     imagePreview.src = canvas.toDataURL();
+}
+
+function createPredictionItem(prediction, index) {
+    const item = document.createElement('div');
+    item.className = 'prediction-item';
+    
+    // Emotion name
+    const name = document.createElement('div');
+    name.className = 'prediction-name';
+    name.textContent = prediction.emotion;
+    
+    // Progress bar container
+    const progressContainer = document.createElement('div');
+    progressContainer.className = 'progress-container';
+    
+    // Progress bar
+    const progressBar = document.createElement('div');
+    progressBar.className = 'progress-bar';
+    const percentage = Math.round(prediction.confidence * 100);
+    progressBar.style.width = `${percentage}%`;
+    
+    // Color based on confidence
+    if (index === 0) {
+        progressBar.style.backgroundColor = '#00FFFF'; // Cyan for top prediction
+    } else {
+        progressBar.style.backgroundColor = 'rgba(0, 255, 255, 0.3)';
+    }
+    
+    progressContainer.appendChild(progressBar);
+    
+    // Percentage text
+    const percentText = document.createElement('div');
+    percentText.className = 'prediction-percent';
+    percentText.textContent = `${percentage}%`;
+    
+    item.appendChild(name);
+    item.appendChild(progressContainer);
+    item.appendChild(percentText);
+    
+    return item;
 }
 
 function displayResults(data) {
