@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libxrender-dev \
-    libgl1-mesa-glx \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -28,7 +28,7 @@ COPY static/ ./static/
 RUN mkdir -p outputs/20251116_213701
 
 # Copy model file if it exists
-COPY outputs/20251116_213701/ ./outputs/20251116_213701/ 2>/dev/null || true
+COPY outputs/20251116_213701/emotion_recognition_ft_20251116_213701.keras ./outputs/20251116_213701/
 
 # Expose port
 EXPOSE 5000

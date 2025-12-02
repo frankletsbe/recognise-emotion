@@ -58,3 +58,28 @@ jobs:
         env:
           PORT: 5000
           DEBUG: false
+
+  build_docker:
+    name: Build Docker image on dev
+    needs: test
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (local only, no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: recognise-emotion:dev
+          load: true
+
+      - name: Verify Docker image was built
+        run: |
+          docker images | grep recognise-emotion
