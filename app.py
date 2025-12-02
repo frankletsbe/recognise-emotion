@@ -58,6 +58,9 @@ def enumerate_cameras(max_cameras=10):
     """Find all available cameras and test them"""
     available_cameras = []
     
+    if os.environ.get('SKIP_CAMERAS', 'False').lower() == 'true':
+        return []
+    
     for i in range(max_cameras):
         cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
         if cap.isOpened():
@@ -417,15 +420,18 @@ def predict():
 
 if __name__ == '__main__':
     # Auto-detect working camera
-    print("Detecting cameras...")
-    cameras = enumerate_cameras()
-    working_camera = next((cam for cam in cameras if cam['working']), None)
-    
-    if working_camera:
-        current_camera_index = working_camera['index']
-        print(f"Default camera set to index {current_camera_index}")
+    if os.environ.get('SKIP_CAMERAS', 'False').lower() == 'true':
+        print("Skipping camera detection (SKIP_CAMERAS=True)")
     else:
-        print("No working camera detected, using index 0")
+        print("Detecting cameras...")
+        cameras = enumerate_cameras()
+        working_camera = next((cam for cam in cameras if cam['working']), None)
+        
+        if working_camera:
+            current_camera_index = working_camera['index']
+            print(f"Default camera set to index {current_camera_index}")
+        else:
+            print("No working camera detected, using index 0")
     
     # Set default model
     if DEEPFACE_AVAILABLE:

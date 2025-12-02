@@ -104,8 +104,50 @@ The test suite covers:
 ```
 tests/
 ├── __init__.py          # Package initialization
-├── test_app.py          # Main test suite
+├── test_app.py          # API and unit tests
+├── test_expression.py   # End-to-end browser tests
 └── README.md            # This file
+```
+
+## Test Files
+
+### test_app.py
+
+Unit and integration tests for the Flask API endpoints, model loading, and utility functions.
+
+### test_expression.py
+
+**End-to-end tests** that simulate real user interactions:
+
+- Starts the Flask app in a subprocess
+- Uses Selenium WebDriver to automate browser interactions
+- Uses a local facial image (`Gemini_Emotion_image.png`) for testing
+- Uploads the image via drag-and-drop interface
+- Validates emotion prediction results and confidence percentages
+
+**Requirements for E2E tests:**
+
+```bash
+pip install selenium
+```
+
+**Chrome WebDriver:**
+
+- The E2E tests require Chrome and ChromeDriver
+- Tests run in headless mode (no visible browser window)
+- If ChromeDriver is not available, tests will be skipped automatically
+
+**Running E2E tests:**
+
+```bash
+# Run only E2E tests
+pytest tests/test_expression.py -v -s
+
+# Run specific E2E test
+pytest tests/test_expression.py::TestEmotionRecognitionE2E::test_image_upload_and_prediction -v -s
+
+# Run API fallback test (no browser required)
+pytest tests/test_expression.py::test_direct_api_prediction -v -s
 ```
 
 ## Continuous Integration
