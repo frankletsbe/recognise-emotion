@@ -1,0 +1,35 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-7.1.2, pluggy-1.5.0 -- C:\Users\marty\anaconda3\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\marty\OneDrive\_Code\recognise-expression, configfile: pytest.ini
+plugins: anyio-4.7.0
+collecting ... collected 1 item
+
+tests/test_expression_simple.py::TestEmotionRecognitionSimple::test_predict_with_facial_image ERROR
+
+=================================== ERRORS ====================================
+_ ERROR at setup of TestEmotionRecognitionSimple.test_predict_with_facial_image _
+
+    @pytest.fixture(scope="class")
+    def app_process():
+        """Start the Flask app as a subprocess on a test port"""
+        # Get the project root directory
+        project_root = Path(__file__).parent.parent
+        app_path = project_root / "app.py"
+    
+>       print(f"\\n\U0001f680 Starting app on port {TEST_PORT}...")
+
+tests\test_expression_simple.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <encodings.cp1252.IncrementalEncoder object at 0x000001A4931B4AD0>
+input = '\\r\\n\U0001f680 Starting app on port 5001...', final = False
+
+    def encode(self, input, final=False):
+>       return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+E       UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f680' in position 2: character maps to <undefined>
+
+..\..\..\anaconda3\Lib\encodings\cp1252.py:19: UnicodeEncodeError
+=========================== short test summary info ===========================
+ERROR tests/test_expression_simple.py::TestEmotionRecognitionSimple::test_predict_with_facial_image
+============================== 1 error in 0.94s ===============================

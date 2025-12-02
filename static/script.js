@@ -32,15 +32,23 @@ const webcamVideo = document.getElementById('webcamVideo');
 const webcamCanvas = document.getElementById('webcamCanvas');
 const stopWebcamBtn = document.getElementById('stopWebcamBtn');
 
+// Settings Elements
+const cameraSelect = document.getElementById('cameraSelect');
+const modelSelect = document.getElementById('modelSelect');
+
 // State
 let currentFile = null;
 let stream = null;
 let isProcessing = false;
 let animationFrameId = null;
+let availableCameras = [];
+let availableModels = [];
 
 // Initialize
 function init() {
     setupEventListeners();
+    loadCameras();
+    loadModels();
 }
 
 function setupEventListeners() {
@@ -73,6 +81,10 @@ function setupEventListeners() {
     // Webcam events
     startWebcamBtn.addEventListener('click', startWebcam);
     stopWebcamBtn.addEventListener('click', stopWebcam);
+    
+    // Settings events
+    cameraSelect.addEventListener('change', handleCameraChange);
+    modelSelect.addEventListener('change', handleModelChange);
 }
 
 function handleDragOver(e) {
@@ -146,6 +158,108 @@ function clearImage() {
     hideLoading();
 }
 
+async function loadCameras() {
+    try {
+        const response = await fetch('/api/cameras');
+        const data = await response.json();
+        
+        availableCameras = data.cameras;
+        cameraSelect.innerHTML = '';
+        
+        data.cameras.forEach(camera => {
+            const option = document.createElement('option');
+            option.value = camera.index;
+            option.textContent = `${camera.name}${camera.working ? ' ✓' : ' (not working)'}`;
+            if (camera.index === data.recommended) {
+                option.selected = true;
+            }
+            if (!camera.working) {
+                option.style.color = '#888';
+            }
+            cameraSelect.appendChild(option);
+        });
+    } catch (err) {
+        console.error('Failed to load cameras:', err);
+        cameraSelect.innerHTML = '<option>Error loading cameras</option>';
+    }
+}
+
+async function loadModels() {
+    try {
+        const response = await fetch('/api/models');
+        const data = await response.json();
+        
+        availableModels = data.models;
+        modelSelect.innerHTML = '';
+        
+        data.models.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model.id;
+            option.textContent = model.name + (model.available ? '' : ' (unavailable)');
+            if (model.id === data.current) {
+                option.selected = true;
+            }
+            if (!model.available) {
+                option.disabled = true;
+                option.style.color = '#888';
+            }
+            modelSelect.appendChild(option);
+        });
+    } catch (err) {
+        console.error('Failed to load models:', err);
+        modelSelect.innerHTML = '<option>Error loading models</option>';
+    }
+}
+
+async function handleCameraChange() {
+    const cameraIndex = parseInt(cameraSelect.value);
+    
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ camera_index: cameraIndex })
+        });
+        
+        if (response.ok) {
+            console.log('Camera updated to index:', cameraIndex);
+            // If webcam is running, restart it with new camera
+            if (stream) {
+                stopWebcam();
+                setTimeout(() => startWebcam(), 500);
+            }
+        }
+    } catch (err) {
+        console.error('Failed to update camera:', err);
+    }
+}
+
+async function handleModelChange() {
+    const modelType = modelSelect.value;
+    
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ model_type: modelType })
+        });
+        
+        if (response.ok) {
+            console.log('Model updated to:', modelType);
+        } else {
+            const data = await response.json();
+            showError(data.error || 'Failed to update model');
+        }
+    } catch (err) {
+        console.error('Failed to update model:', err);
+        showError('Failed to update model');
+    }
+}
+
 async function startWebcam(e) {
     if (e) {
         e.preventDefault();
@@ -156,11 +270,16 @@ async function startWebcam(e) {
         stream = await navigator.mediaDevices.getUserMedia({ video: true });
         webcamVideo.srcObject = stream;
         
+        // CRITICAL FIX: Wait for video to actually start playing
+        await webcamVideo.play();
+        
         dropZone.classList.add('hidden');
         previewSection.classList.add('hidden');
         webcamSection.classList.remove('hidden');
         hideResults();
         hideError();
+        
+        console.log('Webcam started, video playing:', !webcamVideo.paused); // Debug
         
         // Start real-time processing loop
         processWebcamFrame();
@@ -172,7 +291,21 @@ async function startWebcam(e) {
 }
 
 async function processWebcamFrame() {
-    if (!stream || webcamVideo.paused || webcamVideo.ended) return;
+    console.log('processWebcamFrame called, stream:', !!stream); // Debug
+    
+    if (!stream || webcamVideo.paused || webcamVideo.ended) {
+        console.log('Stream check failed'); // Debug
+        return;
+    }
+    
+    // Check if video is ready
+    if (webcamVideo.readyState !== webcamVideo.HAVE_ENOUGH_DATA) {
+        console.log('Video not ready yet'); // Debug
+        animationFrameId = requestAnimationFrame(processWebcamFrame);
+        return;
+    }
+
+    console.log('About to process frame, isProcessing:', isProcessing); // Debug
 
     if (!isProcessing) {
         isProcessing = true;
@@ -183,11 +316,14 @@ async function processWebcamFrame() {
         canvas.height = webcamVideo.videoHeight;
         const ctx = canvas.getContext('2d');
         
+        console.log('Canvas size:', canvas.width, 'x', canvas.height); // Debug
+        
         // Draw video to off-screen canvas (raw, unmirrored)
         ctx.drawImage(webcamVideo, 0, 0, canvas.width, canvas.height);
         
         canvas.toBlob(async (blob) => {
             if (blob) {
+                console.log('Blob created, sending to server...'); // Debug
                 const formData = new FormData();
                 formData.append('file', new File([blob], "frame.jpg", { type: "image/jpeg" }));
                 
@@ -197,10 +333,20 @@ async function processWebcamFrame() {
                         body: formData
                     });
                     
+                    console.log('Response status:', response.status); // Debug
+                    
                     if (response.ok) {
                         const data = await response.json();
-                        drawOverlay(data, canvas.width, canvas.height);
-                        displayResults(data); // Update sidebar results too
+                        console.log('Prediction response:', data); // Debug log
+                        if (data.success && data.box) {
+                            console.log('Drawing box at:', data.box); // Debug log
+                            drawOverlay(data, canvas.width, canvas.height);
+                            displayResults(data); // Update sidebar results too
+                        } else {
+                            console.log('No box in response or not successful'); // Debug log
+                        }
+                    } else {
+                        console.error('Response not OK:', response.status);
                     }
                 } catch (err) {
                     console.error("Frame processing error:", err);
@@ -208,15 +354,17 @@ async function processWebcamFrame() {
                     isProcessing = false;
                 }
             } else {
+                console.log('Blob creation failed'); // Debug
                 isProcessing = false;
             }
-        }, 'image/jpeg', 0.8); // 0.8 quality for speed
+        }, 'image/jpeg', 0.8);
     }
     
     animationFrameId = requestAnimationFrame(processWebcamFrame);
 }
 
 function drawOverlay(data, width, height) {
+    console.log('drawOverlay called with:', { data, width, height }); // Debug log
     webcamCanvas.width = width;
     webcamCanvas.height = height;
     webcamCanvas.classList.remove('hidden');
@@ -225,28 +373,55 @@ function drawOverlay(data, width, height) {
     ctx.clearRect(0, 0, width, height);
     
     if (data.box) {
+        console.log('Box found, drawing...'); // Debug log
         const [x, y, w, h] = data.box;
         
-        // Calculate mirrored X coordinate for display
-        // The video is CSS mirrored (scaleX(-1))
-        // The canvas is NOT mirrored
-        // So we need to draw at (width - x - w) to match the visual video
-        const mirroredX = width - x - w;
+        // Draw Cyan Box with rounded corners
+        const radius = 15;
+        ctx.strokeStyle = '#00FFFF';  // Cyan color
+        ctx.lineWidth = 4;  // Thicker line for better visibility
         
-        // Draw Green Box
-        ctx.strokeStyle = '#00ff00';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(mirroredX, y, w, h);
+        // Draw rounded rectangle at ORIGINAL coordinates
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + w - radius, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+        ctx.lineTo(x + w, y + h - radius);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+        ctx.lineTo(x + radius, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
+        ctx.stroke();
+        
+        // Prepare label text
+        const labelText = `${data.prediction} ${Math.round(data.confidence * 100)}%`;
+        ctx.font = 'bold 18px Inter, sans-serif';
+        const textMetrics = ctx.measureText(labelText);
+        const textWidth = textMetrics.width;
+        const textHeight = 24;
+        const padding = 12;
+        
+        // Draw label at ORIGINAL x coordinate
+        const labelY = y - textHeight - padding;
         
         // Draw Label Background
-        ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
-        ctx.fillRect(mirroredX, y - 30, w, 30);
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.5)';
+        ctx.fillRect(x, labelY, textWidth + padding * 2, textHeight + padding);
         
-        // Draw Label Text
-        ctx.fillStyle = '#000000';
-        ctx.font = 'bold 16px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${data.prediction} (${Math.round(data.confidence * 100)}%)`, mirroredX + w/2, y - 10);
+        // Pre-mirror the text so it appears correct after CSS mirroring
+        ctx.save();
+        ctx.translate(x + textWidth + padding * 2, labelY);
+        ctx.scale(-1, 1);
+        
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 18px Inter, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(labelText, padding, 4);
+        
+        ctx.restore();
     }
 }
 
@@ -302,7 +477,20 @@ async function uploadAndPredict(file) {
         });
         
         if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
+            let errorMessage = `Server error: ${response.status}`;
+            try {
+                const errorData = await response.json();
+                if (errorData.error) {
+                    if (errorData.error.includes('No face detected')) {
+                        errorMessage = "Could not predict emotion, try again using a different image";
+                    } else {
+                        errorMessage = errorData.error;
+                    }
+                }
+            } catch (e) {
+                // Ignore JSON parse error, use default status message
+            }
+            throw new Error(errorMessage);
         }
         
         const data = await response.json();
@@ -319,6 +507,81 @@ async function uploadAndPredict(file) {
         hideLoading();
         showError(error.message || 'Failed to analyze image. Please try again.');
     }
+}
+
+// Add this new function to draw box on the preview image
+function drawBoxOnPreview(box, emotion, confidence) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = imagePreview;
+    
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    
+    // Draw the image
+    ctx.drawImage(img, 0, 0);
+    
+    // Draw bounding box
+    const [x, y, w, h] = box;
+    ctx.strokeStyle = '#00FFFF';  // Cyan
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+    
+    // Draw label
+    const label = `${emotion} ${Math.round(confidence * 100)}%`;
+    ctx.font = 'bold 16px Inter, sans-serif';
+    const textWidth = ctx.measureText(label).width;
+    
+    // Draw label background
+    ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+    ctx.fillRect(x, y - 25, textWidth + 20, 30);
+    
+    // Draw label text
+    ctx.fillStyle = '#00FFFF';
+    ctx.fillText(label, x + 10, y - 7);
+    
+    // Replace preview image with canvas
+    imagePreview.src = canvas.toDataURL();
+}
+
+function createPredictionItem(prediction, index) {
+    const item = document.createElement('div');
+    item.className = 'prediction-item';
+    
+    // Emotion name
+    const name = document.createElement('div');
+    name.className = 'prediction-name';
+    name.textContent = prediction.emotion;
+    
+    // Progress bar container
+    const progressContainer = document.createElement('div');
+    progressContainer.className = 'progress-container';
+    
+    // Progress bar
+    const progressBar = document.createElement('div');
+    progressBar.className = 'progress-bar';
+    const percentage = Math.round(prediction.confidence * 100);
+    progressBar.style.width = `${percentage}%`;
+    
+    // Color based on confidence
+    if (index === 0) {
+        progressBar.style.backgroundColor = '#00FFFF'; // Cyan for top prediction
+    } else {
+        progressBar.style.backgroundColor = 'rgba(0, 255, 255, 0.3)';
+    }
+    
+    progressContainer.appendChild(progressBar);
+    
+    // Percentage text
+    const percentText = document.createElement('div');
+    percentText.className = 'prediction-percent';
+    percentText.textContent = `${percentage}%`;
+    
+    item.appendChild(name);
+    item.appendChild(progressContainer);
+    item.appendChild(percentText);
+    
+    return item;
 }
 
 function displayResults(data) {
@@ -338,51 +601,79 @@ function displayResults(data) {
         predictionsList.appendChild(item);
     });
     
+    // Draw bounding box on uploaded image if box data exists
+    if (data.box && currentFile) {
+        drawBoxOnPreview(data.box, data.prediction, data.confidence);
+    }
+    
     showResults();
 }
 
-function createPredictionItem(prediction, index) {
-    const item = document.createElement('div');
-    item.className = 'prediction-item';
-    item.style.animationDelay = `${index * 0.05}s`;
+async function predictEmotion() {
+    const fileInput = document.getElementById('imageInput');
+    const file = fileInput.files[0];
     
-    const emoji = document.createElement('div');
-    emoji.className = 'prediction-emoji';
-    emoji.textContent = EMOTION_EMOJIS[prediction.emotion] || '😊';
+    if (!file) {
+        alert('Please select an image first');
+        return;
+    }
     
-    const info = document.createElement('div');
-    info.className = 'prediction-info';
+    const formData = new FormData();
+    formData.append('file', file);
     
-    const name = document.createElement('div');
-    name.className = 'prediction-name';
-    name.textContent = prediction.emotion;
+    try {
+        const response = await fetch('/predict', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Display the image with bounding box
+            displayImageWithBox(file, data.box, data.prediction, data.confidence);
+        } else {
+            alert('Error: ' + (data.error || 'No face detected'));
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to predict emotion');
+    }
+}
+
+function displayImageWithBox(file, box, emotion, confidence) {
+    const canvas = document.getElementById('resultCanvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
     
-    const barContainer = document.createElement('div');
-    barContainer.className = 'prediction-bar-container';
+    img.onload = function() {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        
+        // Draw the image
+        ctx.drawImage(img, 0, 0);
+        
+        // Draw bounding box (cyan color to match backend)
+        const [x, y, w, h] = box;
+        ctx.strokeStyle = '#00FFFF';  // Cyan
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, w, h);
+        
+        // Draw label
+        const label = `${emotion} (${(confidence * 100).toFixed(1)}%)`;
+        ctx.font = 'bold 16px Arial';
+        const textWidth = ctx.measureText(label).width;
+        
+        // Draw label background
+        ctx.fillStyle = '#00FFFF';
+        ctx.fillRect(x, y - 25, textWidth + 10, 25);
+        
+        // Draw label text
+        ctx.fillStyle = '#000000';
+        ctx.fillText(label, x + 5, y - 7);
+    };
     
-    const bar = document.createElement('div');
-    bar.className = 'prediction-bar';
-    const percentage = prediction.confidence * 100;
-    
-    // Animate bar width
-    setTimeout(() => {
-        bar.style.width = `${percentage}%`;
-    }, 100 + index * 50);
-    
-    barContainer.appendChild(bar);
-    
-    info.appendChild(name);
-    info.appendChild(barContainer);
-    
-    const percentageText = document.createElement('div');
-    percentageText.className = 'prediction-percentage';
-    percentageText.textContent = `${Math.round(percentage)}%`;
-    
-    item.appendChild(emoji);
-    item.appendChild(info);
-    item.appendChild(percentageText);
-    
-    return item;
+    img.src = URL.createObjectURL(file);
 }
 
 function showLoading() {
